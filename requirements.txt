@@ -1,0 +1,7 @@
+# MetaGPT 执行器核心依赖（版本由 pip 解析，metagpt 自带 pydantic 兼容范围约束）
+metagpt
+pydantic
+docker
+
+# 本地跑 tests/ 用；沙箱容器内的 pytest 由 .wheels/ 离线安装，不依赖这行
+pytest

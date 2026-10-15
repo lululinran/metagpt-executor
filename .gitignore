@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.wheels/
+.pytest_cache/
+workspace/
+.DS_Store

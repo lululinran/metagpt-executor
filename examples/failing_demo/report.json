@@ -1,0 +1,18 @@
+{
+  "passed": 1,
+  "total": 2,
+  "failed": 1,
+  "failures": [
+    {
+      "test_name": "test_this_must_fail",
+      "error_type": "AssertionError",
+      "message": "故意失败：验证沙箱能捕获 traceback",
+      "traceback": "    def test_this_must_fail():\n>       assert 1 == 2, \"故意失败：验证沙箱能捕获 traceback\"\nE       AssertionError: 故意失败：验证沙箱能捕获 traceback\nE       assert 1 == 2\n\ntest_app.py:11: AssertionError"
+    }
+  ],
+  "stdout": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n_____________________________ test_this_must_fail ______________________________\n\n    def test_this_must_fail():\n>       assert 1 == 2, \"故意失败：验证沙箱能捕获 traceback\"\nE       AssertionError: 故意失败：验证沙箱能捕获 traceback\nE       assert 1 == 2\n\ntest_app.py:11: AssertionError\n=============================== warnings summary ===============================\n../usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:469\n  /usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:469: PytestCacheWarning: could not create cache path /app/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/app/pytest-cache-files-6b__2z5t'\n    config.cache.set(\"cache/nodeids\", sorted(self.cached_nodeids))\n\n../usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:423\n  /usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:423: PytestCacheWarning: could not create cache path /app/.pytest_cache/v/cache/lastfailed: [Errno 30] Read-only file system: '/app/pytest-cache-files-8cayi4mn'\n    config.cache.set(\"cache/lastfailed\", self.lastfailed)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nFAILED test_app.py::test_this_must_fail - AssertionError: 故意失败：验证沙箱...\n1 failed, 1 passed, 2 warnings in 0.01s\n",
+  "stderr": "WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv\n",
+  "duration": 1.36,
+  "exit_code": 1,
+  "timed_out": false
+}

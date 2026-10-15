@@ -1,0 +1,3 @@
+# sdist 构建环境约束：新版 setuptools（>=80）移除了 pkg_resources，
+# 会让 fire==0.4.0 等老包的 setup.py 构建失败。通过 PIP_CONSTRAINT 注入构建环境。
+setuptools<80
