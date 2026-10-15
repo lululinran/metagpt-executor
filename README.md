@@ -24,13 +24,15 @@ metagpt-executor/
 ├── requirements-metagpt-fix.txt  # 修复 lancedb pin 后的 metagpt 依赖清单（见"安装踩坑记录"）
 ├── build-constraints.txt         # sdist 构建期约束（setuptools<80）
 ├── conftest.py                # 让 tests/ 能从仓库根导入 schemas
-├── executor_sandbox.py        # Docker 沙箱执行器（独立组件，Phase 1 不接 MetaGPT）
+├── executor_sandbox.py        # Docker 沙箱执行器（任意命令原语 run_in_sandbox + pytest 包装）
 ├── schemas.py                 # TestReport / FixRequest 数据契约（pydantic）
+├── llm_fixer.py               # FixRequest → LLM → {"files":[...]} 补丁解析与落盘
+├── auto_fix_loop.py           # 判卷 → 回传修复 → 复验 的自动闭环（Phase 2 第一刀）
 ├── examples/failing_demo/     # 必挂测试样例（验收沙箱用：一过一挂）
 │   ├── app.py
 │   ├── test_app.py
 │   └── report.json            # 沙箱真实跑出的结构化报告（第 5 步 → 第 6 步的衔接证据）
-└── tests/test_schemas.py      # 验收：用沙箱真实输出构造合法 TestReport / FixRequest
+└── tests/                     # schemas / llm_fixer 离线测试
 ```
 
 ## 快速开始
@@ -84,5 +86,27 @@ pip install "click<8.2"
 ## 路线图
 
 - [x] Phase 1：环境检查 / MetaGPT 跑通官方 demo / 沙箱 MVP / 数据结构
-- [ ] Phase 2：MetaGPT 产出 → 沙箱自动判卷 → FixRequest 回传 → 自动修复闭环
-- [ ] Phase 3：多轮修复策略、token 成本统计、验收报告
+- [x] Phase 2（第一刀）：沙箱判卷（pytest + 入口冒烟）→ FixRequest 回传 LLM → 补丁落盘 → 复验闭环
+- [ ] Phase 2（后续）：MetaGPT 执行器整体编排（生成即判卷）、多轮策略与预算控制
+- [ ] Phase 3：成本统计报表、验收报告
+
+## Phase 2 修复闭环
+
+```bash
+python auto_fix_loop.py <MetaGPT产物目录> \
+    --entry "python simple_todo_cli/main.py add smoke && python simple_todo_cli/main.py list"
+```
+
+- 原产物目录**永不改写**：每轮修复在 `fix_sessions/<时间戳>/` 可写副本上进行；
+- 判卷 = `pytest -q`（沙箱禁网）+ **入口冒烟**（沙箱里真实跑一遍入口命令）——
+  实测中 MetaGPT 产物 105 个单测全绿，但 `cli.py` 是 0 字节空文件、入口坏死，
+  只有冒烟能抓到这类"测试全绿但交付物不可用"的缺陷；
+- 每轮报告（TestReport + 冒烟结果 + 应用的补丁 + token 用量）落在
+  `fix_sessions/<时间戳>/reports/round-N.json`；
+- 推理模型把 max_tokens 烧在思考上导致 content 为空/JSON 截断时，自动预算翻倍重试一次
+  （deepseek-v4-flash 实测需要）。
+
+**实测案例**（2026-10-15，MetaGPT demo 产物 `simple_todo_cli`）：
+第 1 轮判卷抓到 `ImportError` → 回传 LLM（9132 prompt + 13425 completion tokens）→
+生成 350 行 `todo_cli/cli.py` → 第 2 轮 pytest 105 全绿 + 冒烟 exit=0，闭环成功。
+

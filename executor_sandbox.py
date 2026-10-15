@@ -99,26 +99,31 @@ def ensure_image(client: docker.DockerClient) -> None:
         client.images.pull(BASE_IMAGE)
 
 
-def run_pytest_in_sandbox(code_dir: Path, timeout: int = DEFAULT_TIMEOUT) -> dict:
-    """在全新禁网容器里跑 pytest -q，返回结构化报告 dict。"""
+PYTEST_CMD = ("pip install --no-index --find-links=" + WHEEL_MOUNT
+              + " -q pytest && pytest -q")
+
+
+def run_in_sandbox(code_dir: Path, command: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
+    """在全新禁网容器里执行一段 shell 命令（工作目录 /app，代码只读挂载）。
+
+    返回原始结果: {exit_code, stdout, stderr, duration, timed_out}
+    """
     code_dir = code_dir.resolve()
     if not code_dir.is_dir():
         raise RuntimeError(f"代码目录不存在: {code_dir}")
-    if not list(code_dir.glob("test_*.py")) and not list(code_dir.glob("*_test.py")):
-        print(f"[sandbox] 警告: {code_dir} 下没找到 test_*.py / *_test.py，pytest 可能收集不到用例")
 
     wheels = ensure_wheels()
     client = get_docker_client()
     ensure_image(client)
 
     print(f"[sandbox] 启动容器: image={BASE_IMAGE}, /app={code_dir} (ro), network=disabled, timeout={timeout}s")
+    print(f"[sandbox] 命令: {command}")
     container = None
     start = time.time()
     try:
         container = client.containers.run(
             image=BASE_IMAGE,
-            command=["sh", "-c",
-                     "pip install --no-index --find-links=" + WHEEL_MOUNT + " -q pytest && pytest -q"],
+            command=["sh", "-c", command],
             volumes={
                 str(code_dir): {"bind": CONTAINER_WORKDIR, "mode": "ro"},  # 只读挂载
                 str(wheels): {"bind": WHEEL_MOUNT, "mode": "ro"},
@@ -146,14 +151,13 @@ def run_pytest_in_sandbox(code_dir: Path, timeout: int = DEFAULT_TIMEOUT) -> dic
         # docker SDK 的 logs() 不支持 demux（那是 exec_run 的参数），分两次取
         stdout_b = container.logs(stdout=True, stderr=False)
         stderr_b = container.logs(stdout=False, stderr=True)
-        return build_report(
-            stdout=(stdout_b or b"").decode("utf-8", errors="replace"),
-            stderr=(stderr_b or b"").decode("utf-8", errors="replace"),
-            exit_code=exit_code,
-            duration=duration,
-            timed_out=timed_out,
-            timeout=timeout,
-        )
+        return {
+            "exit_code": exit_code,
+            "stdout": (stdout_b or b"").decode("utf-8", errors="replace"),
+            "stderr": (stderr_b or b"").decode("utf-8", errors="replace"),
+            "duration": round(duration, 2),
+            "timed_out": timed_out,
+        }
     except docker.errors.DockerException as exc:
         raise RuntimeError(f"Docker 调用失败: {exc}") from exc
     finally:
@@ -163,6 +167,22 @@ def run_pytest_in_sandbox(code_dir: Path, timeout: int = DEFAULT_TIMEOUT) -> dic
                 print("[sandbox] 容器已销毁")
             except docker.errors.NotFound:
                 pass
+
+
+def run_pytest_in_sandbox(code_dir: Path, timeout: int = DEFAULT_TIMEOUT) -> dict:
+    """在全新禁网容器里跑 pytest -q，返回结构化报告 dict。"""
+    code_dir = code_dir.resolve()
+    if not list(code_dir.glob("test_*.py")) and not list(code_dir.glob("*_test.py")):
+        print(f"[sandbox] 警告: {code_dir} 下没找到 test_*.py / *_test.py，pytest 可能收集不到用例")
+    res = run_in_sandbox(code_dir, PYTEST_CMD, timeout)
+    return build_report(
+        stdout=res["stdout"],
+        stderr=res["stderr"],
+        exit_code=res["exit_code"],
+        duration=res["duration"],
+        timed_out=res["timed_out"],
+        timeout=timeout,
+    )
 
 
 def _count(pattern: str, text: str) -> int:
@@ -260,9 +280,29 @@ def main() -> int:
     parser.add_argument("code_dir", help="待测代码目录（将被只读挂载到容器 /app）")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help=f"超时秒数（默认 {DEFAULT_TIMEOUT}）")
+    parser.add_argument("--cmd", default=None,
+                        help="自定义冒烟命令（默认跑 pytest -q），如 --cmd 'python main.py --help'")
     parser.add_argument("--json", dest="json_path", default=None,
                         help="把结构化报告写到该 JSON 文件")
     args = parser.parse_args()
+
+    if args.cmd:
+        try:
+            res = run_in_sandbox(Path(args.code_dir), args.cmd, timeout=args.timeout)
+        except RuntimeError as exc:
+            print(f"[sandbox] 沙箱故障: {exc}", file=sys.stderr)
+            return 2
+        print(f"--- exit={res['exit_code']} duration={res['duration']}s timed_out={res['timed_out']} ---")
+        if res["stdout"]:
+            print(res["stdout"], end="")
+        if res["stderr"]:
+            print(res["stderr"], end="", file=sys.stderr)
+        if args.json_path:
+            Path(args.json_path).write_text(
+                json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print(f"[sandbox] 结果已写入: {args.json_path}")
+        return 1 if res["timed_out"] else 0
 
     try:
         report = run_pytest_in_sandbox(Path(args.code_dir), timeout=args.timeout)
