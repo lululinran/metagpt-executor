@@ -50,3 +50,16 @@ def test_build_user_prompt_contains_context_and_failure():
     assert "[ImportError] boom" in prompt
     assert "print('hi')" in prompt
     assert "第 2 轮" in prompt
+
+
+def test_discover_entry(tmp_path):
+    from metagpt_executor import discover_entry
+
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "main.py").write_text("print('hi')\n", encoding="utf-8")
+    entry = discover_entry(tmp_path)
+    assert entry == "python pkg/main.py --help"
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert discover_entry(empty) is None

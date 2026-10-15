@@ -139,29 +139,49 @@ def save_round_report(session: Path, rnd: int, report: TestReport, smoke: dict,
     return out
 
 
-def run_loop(artifact_dir: Path, entry_cmd: str | None, max_rounds: int,
-             model: str | None, timeout: int) -> int:
+def run_loop_structured(artifact_dir: Path, entry_cmd: str | None, max_rounds: int,
+                        fixer: "LLMFixer", budget_tokens: int, timeout: int = 120,
+                        verbose: bool = True) -> dict:
+    """判卷+修复闭环，返回结构化结果（供 metagpt_executor 组装最终报告）。
+
+    返回: {status, session_dir, rounds: [...], token_total}
+    status ∈ all_green | max_rounds_exhausted | budget_exhausted | fixer_error
+    """
+    log = print if verbose else (lambda *a, **k: None)
     artifact_dir = artifact_dir.resolve()
     session = copy_session(artifact_dir)
-    print(f"[loop] 会话目录（可写副本）: {session}")
-    print(f"[loop] 原产物目录保持只读不动: {artifact_dir}")
+    log(f"[loop] 会话目录（可写副本）: {session}")
+    log(f"[loop] 原产物目录保持只读不动: {artifact_dir}")
 
-    llm_cfg = load_llm_config(model)
-    fixer = LLMFixer(api_key=llm_cfg["api_key"], base_url=llm_cfg["base_url"],
-                     model=llm_cfg["model"])
-    print(f"[loop] 修复模型: {llm_cfg['model']} @ {llm_cfg['base_url']}")
-
+    rounds: list[dict] = []
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    status = "max_rounds_exhausted"
+
     for rnd in range(1, max_rounds + 1):
-        print(f"\n========== 第 {rnd}/{max_rounds} 轮：判卷 ==========")
+        log(f"\n========== 第 {rnd}/{max_rounds} 轮：判卷 ==========")
         report, smoke, failures = judge(session, entry_cmd, timeout)
-        print(f"[loop] pytest: {report.failed} failed / {report.passed} passed"
-              f" | 冒烟: exit={smoke.get('exit_code')} | 失败合计: {len(failures)}")
+        log(f"[loop] pytest: {report.failed} failed / {report.passed} passed"
+            f" | 冒烟: exit={smoke.get('exit_code')} | 失败合计: {len(failures)}")
 
         if not failures:
+            rounds.append({"round": rnd, "pytest_failed": report.failed,
+                           "pytest_passed": report.passed, "smoke_exit": smoke.get("exit_code"),
+                           "failures": [], "applied_patches": [], "usage": {}})
             save_round_report(session, rnd, report, smoke, [], [], total_usage)
-            print(f"\n[loop] ✅ 第 {rnd} 轮全部通过（pytest + 入口冒烟）。会话: {session}")
-            return 0
+            status = "all_green"
+            log(f"\n[loop] ✅ 第 {rnd} 轮全部通过（pytest + 入口冒烟）。")
+            break
+
+        if sum(total_usage.values()) >= budget_tokens:
+            status = "budget_exhausted"
+            rounds.append({"round": rnd, "pytest_failed": report.failed,
+                           "pytest_passed": report.passed, "smoke_exit": smoke.get("exit_code"),
+                           "failures": [f.model_dump() for f in failures],
+                           "applied_patches": [], "usage": {},
+                           "note": f"token 预算 {budget_tokens} 已用完，停止修复"})
+            save_round_report(session, rnd, report, smoke, failures, [], total_usage)
+            log(f"\n[loop] 💸 token 预算 {budget_tokens} 已用完，停止。")
+            break
 
         fix_request = FixRequest(
             target_files=sorted({_norm_path(p) for f in failures
@@ -172,23 +192,48 @@ def run_loop(artifact_dir: Path, entry_cmd: str | None, max_rounds: int,
             retry_round=rnd,
         )
         context = collect_context(session, failures)
-        print(f"[loop] 回传 LLM 修复（上下文 {len(context)} 个文件, "
-              f"target={fix_request.target_files or '由模型判断'}）...")
+        log(f"[loop] 回传 LLM 修复（上下文 {len(context)} 个文件, "
+            f"target={fix_request.target_files or '由模型判断'}）...")
         try:
             patches, usage = fixer.request_fix(fix_request, context, build_tree(session))
         except Exception as exc:
-            print(f"[loop] ⚠️ LLM 修复调用失败: {exc}", file=sys.stderr)
+            log(f"[loop] ⚠️ LLM 修复调用失败: {exc}")
+            rounds.append({"round": rnd, "pytest_failed": report.failed,
+                           "pytest_passed": report.passed, "smoke_exit": smoke.get("exit_code"),
+                           "failures": [f.model_dump() for f in failures],
+                           "applied_patches": [], "usage": {"error": str(exc)}})
             save_round_report(session, rnd, report, smoke, failures, [], {"error": str(exc)})
-            return 3
+            status = "fixer_error"
+            break
         for k in total_usage:
             total_usage[k] += usage.get(k, 0)
         fixed = apply_patches(session, patches)
-        print(f"[loop] 已应用补丁: {fixed or '（模型未返回文件）'}")
-        print(f"[loop] 累计 token: {total_usage}")
+        log(f"[loop] 已应用补丁: {fixed or '（模型未返回文件）'}")
+        log(f"[loop] 累计 token: {total_usage}")
+        rounds.append({"round": rnd, "pytest_failed": report.failed,
+                       "pytest_passed": report.passed, "smoke_exit": smoke.get("exit_code"),
+                       "failures": [f.model_dump() for f in failures],
+                       "applied_patches": fixed, "usage": usage})
         save_round_report(session, rnd, report, smoke, failures, fixed, usage)
 
-    print(f"\n[loop] ❌ {max_rounds} 轮后仍有失败，最后报告见 {session / 'reports'}")
-    return 1
+    return {"status": status, "session_dir": str(session),
+            "rounds": rounds, "token_total": total_usage}
+
+
+def run_loop(artifact_dir: Path, entry_cmd: str | None, max_rounds: int,
+             model: str | None, timeout: int) -> int:
+    """CLI 入口：组装 fixer 并跑结构化闭环，按状态映射退出码。"""
+    llm_cfg = load_llm_config(model)
+    fixer = LLMFixer(api_key=llm_cfg["api_key"], base_url=llm_cfg["base_url"],
+                     model=llm_cfg["model"])
+    print(f"[loop] 修复模型: {llm_cfg['model']} @ {llm_cfg['base_url']}")
+    result = run_loop_structured(artifact_dir, entry_cmd, max_rounds, fixer,
+                                 budget_tokens=10**9, timeout=timeout)
+    if result["status"] != "all_green":
+        print(f"\n[loop] ❌ {result['status']}，最后报告见 {Path(result['session_dir']) / 'reports'}")
+        return 1
+    print(f"\n[loop] ✅ 完成。会话: {result['session_dir']}")
+    return 0
 
 
 def main() -> int:
