@@ -27,7 +27,9 @@ metagpt-executor/
 ├── executor_sandbox.py        # Docker 沙箱执行器（任意命令原语 run_in_sandbox + pytest 包装）
 ├── schemas.py                 # TestReport / FixRequest 数据契约（pydantic）
 ├── llm_fixer.py               # FixRequest → LLM → {"files":[...]} 补丁解析与落盘
-├── auto_fix_loop.py           # 判卷 → 回传修复 → 复验 的自动闭环（Phase 2 第一刀）
+├── auto_fix_loop.py           # 判卷 → 回传修复 → 复验 的自动闭环
+├── metagpt_executor.py        # 一条命令编排：idea → 生成 → 判卷 → 修复 → 报告
+├── cost_report.py             # 修复/生成成本账本（Markdown + JSON）
 ├── examples/failing_demo/     # 必挂测试样例（验收沙箱用：一过一挂）
 │   ├── app.py
 │   ├── test_app.py
@@ -86,9 +88,10 @@ pip install "click<8.2"
 ## 路线图
 
 - [x] Phase 1：环境检查 / MetaGPT 跑通官方 demo / 沙箱 MVP / 数据结构
-- [x] Phase 2（第一刀）：沙箱判卷（pytest + 入口冒烟）→ FixRequest 回传 LLM → 补丁落盘 → 复验闭环
-- [ ] Phase 2（后续）：MetaGPT 执行器整体编排（生成即判卷）、多轮策略与预算控制
-- [ ] Phase 3：成本统计报表、验收报告
+- [x] Phase 2：沙箱判卷（pytest + 入口冒烟）→ FixRequest 回传 LLM → 复验闭环；一条命令编排 + 预算闸门
+- [x] Phase 3：成本账本（`cost_report.py`）、验收报告成文（[REPORT.md](REPORT.md)）
+
+完整验收数据与实战案例见 **[REPORT.md](REPORT.md)**。
 
 ## Phase 2 修复闭环
 

@@ -174,7 +174,7 @@ def run_loop_structured(artifact_dir: Path, entry_cmd: str | None, max_rounds: i
             rounds.append({"round": rnd, "pytest_failed": report.failed,
                            "pytest_passed": report.passed, "smoke_exit": smoke.get("exit_code"),
                            "failures": [], "applied_patches": [], "usage": {}})
-            save_round_report(session, rnd, report, smoke, [], [], total_usage)
+            save_round_report(session, rnd, report, smoke, [], [], {})  # 判卷轮无 LLM 调用
             status = "all_green"
             log(f"\n[loop] ✅ 第 {rnd} 轮全部通过（pytest + 入口冒烟）。")
             break
@@ -186,7 +186,7 @@ def run_loop_structured(artifact_dir: Path, entry_cmd: str | None, max_rounds: i
                            "failures": [f.model_dump() for f in failures],
                            "applied_patches": [], "usage": {},
                            "note": f"token 预算 {budget_tokens} 已用完，停止修复"})
-            save_round_report(session, rnd, report, smoke, failures, [], total_usage)
+            save_round_report(session, rnd, report, smoke, failures, [], {})  # 该轮无 LLM 调用
             log(f"\n[loop] 💸 token 预算 {budget_tokens} 已用完，停止。")
             break
 

@@ -1,0 +1,120 @@
+{
+  "sessions": [
+    {
+      "session": "20261015-173624",
+      "status": null,
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0,
+          "error": "Expecting value: line 1 column 1 (char 0)"
+        }
+      ],
+      "prompt": 0,
+      "completion": 0
+    },
+    {
+      "session": "20261015-173911",
+      "status": null,
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0,
+          "error": "Unterminated string starting at: line 1 column 67 (char 66)"
+        }
+      ],
+      "prompt": 0,
+      "completion": 0
+    },
+    {
+      "session": "20261015-174332",
+      "status": null,
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 9132,
+          "completion": 13425,
+          "patches": 1
+        },
+        {
+          "round": 2,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0
+        }
+      ],
+      "prompt": 9132,
+      "completion": 13425
+    },
+    {
+      "session": "20261015-175640",
+      "status": "all_green",
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 9132,
+          "completion": 14608,
+          "patches": 1
+        },
+        {
+          "round": 2,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0
+        }
+      ],
+      "prompt": 9132,
+      "completion": 14608
+    },
+    {
+      "session": "20261015-181406",
+      "status": "all_green",
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0
+        }
+      ],
+      "prompt": 0,
+      "completion": 0
+    },
+    {
+      "session": "20261015-181837",
+      "status": "all_green",
+      "rounds": [
+        {
+          "round": 1,
+          "prompt": 12378,
+          "completion": 15045,
+          "patches": 8
+        },
+        {
+          "round": 2,
+          "prompt": 0,
+          "completion": 0,
+          "patches": 0
+        }
+      ],
+      "prompt": 12378,
+      "completion": 15045
+    }
+  ],
+  "builds": [
+    {
+      "build": "20261015-180044",
+      "metagpt_llm_calls": 0,
+      "generate_duration_s": null
+    },
+    {
+      "build": "20261015-180140",
+      "metagpt_llm_calls": 24,
+      "generate_duration_s": null
+    }
+  ]
+}
