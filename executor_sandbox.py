@@ -197,7 +197,8 @@ def parse_failures(stdout: str) -> list:
     此时按 pytest 语义归为 AssertionError。
     """
     failures: list = []
-    sec = re.search(r"=+\s*FAILURES\s*=+", stdout)
+    # 失败可能在 FAILURES（断言/用例失败）或 ERRORS（收集期 import 失败等）区段
+    sec = re.search(r"=+\s*(?:FAILURES|ERRORS)\s*=+", stdout)
     if not sec:
         return failures
     section = stdout[sec.end():]

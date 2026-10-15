@@ -36,8 +36,9 @@ from schemas import Failure, FixRequest, TestReport
 REPO_ROOT = Path(__file__).resolve().parent
 SESSION_ROOT = REPO_ROOT / "fix_sessions"
 
-# 每轮喂给 LLM 的上下文文件上限（行数），防止 prompt 无限膨胀
+# 每轮喂给 LLM 的上下文上限：单文件行数 / 文件个数
 MAX_CONTEXT_LINES = 400
+MAX_CONTEXT_FILES = 30
 
 
 def load_llm_config(model_override: str | None) -> dict:
@@ -70,15 +71,13 @@ def collect_context(session: Path, failures: list[Failure]) -> dict[str, str]:
     for f in failures:
         for m in re.finditer(r"[\w./-]+\.py", f.traceback + " " + f.message):
             wanted.add(_norm_path(m.group(0)))
-    # main.py 与 todo_cli 包整体作为上下文（demo 的分层核心）
-    for extra in ["main.py", "simple_todo_cli/main.py"]:
-        if (session / extra).is_file():
-            wanted.add(extra)
-    for p in session.rglob("todo_cli/*.py"):
-        wanted.add(str(p.relative_to(session)))
+    # 全项目 .py 都纳入上下文（带文件数上限），避免对特定项目布局硬编码
+    for p in session.rglob("*.py"):
+        if "__pycache__" not in p.parts:
+            wanted.add(str(p.relative_to(session)))
 
     context: dict[str, str] = {}
-    for rel in sorted(wanted):
+    for rel in sorted(wanted)[:MAX_CONTEXT_FILES]:
         f = session / rel
         if not f.is_file():
             continue
@@ -115,6 +114,14 @@ def judge(session: Path, entry_cmd: str | None, timeout: int) -> tuple[TestRepor
     """跑一轮判卷：pytest + 入口冒烟，返回 (TestReport, 冒烟原始结果, 汇总失败列表)。"""
     report = TestReport(**run_pytest_in_sandbox(session, timeout=timeout))
     failures = list(report.failures)
+    if report.failed > 0 and not failures:
+        # 兜底：failed>0 却没解析出失败块（如输出形状再变）——把原文末段整体回传，绝不漏报
+        failures.append(Failure(
+            test_name="pytest_unparsed_failures",
+            error_type="TestFailure",
+            message=f"pytest 报告 {report.failed} 个失败/错误，但未能解析出 FAILURES/ERRORS 区段",
+            traceback=(report.stdout or "")[-3000:],
+        ))
     smoke: dict = {}
     if entry_cmd:
         smoke = run_in_sandbox(session, entry_cmd, timeout=timeout)
@@ -184,8 +191,11 @@ def run_loop_structured(artifact_dir: Path, entry_cmd: str | None, max_rounds: i
             break
 
         fix_request = FixRequest(
-            target_files=sorted({_norm_path(p) for f in failures
-                                 for p in re.findall(r"[\w./-]+\.py", f.traceback + f.message)}),
+            target_files=sorted({
+                _norm_path(p) for f in failures
+                for p in re.findall(r"[\w./-]+\.py", f.traceback + f.message)
+                if (session / _norm_path(p)).is_file()  # 只保留项目内真实存在的文件，滤掉标准库路径
+            }),
             failure_summary="\n\n".join(
                 f"[{f.error_type}] {f.test_name}\n{f.message}\n{f.traceback}" for f in failures),
             suggested_fix="",

@@ -24,7 +24,20 @@ from llm_fixer import LLMFixer
 
 REPO_ROOT = Path(__file__).resolve().parent
 BUILD_ROOT = REPO_ROOT / "builds"
-METAGPT_BIN = Path(sys.executable).resolve().parent / "metagpt"
+
+
+def find_metagpt_bin() -> Path:
+    """venv 里找 metagpt CLI；sys.executable 在 Homebrew venv 会解析到框架路径，用 sys.prefix。"""
+    candidate = Path(sys.prefix) / "bin" / "metagpt"
+    if candidate.exists():
+        return candidate
+    import shutil
+
+    found = shutil.which("metagpt")
+    return Path(found) if found else candidate
+
+
+METAGPT_BIN = find_metagpt_bin()
 
 STATUS_EXIT = {"all_green": 0, "max_rounds_exhausted": 1, "budget_exhausted": 4,
                "fixer_error": 3, "generation_failed": 5}
@@ -63,6 +76,9 @@ def generate(idea: str, project_name: str | None, run_tests: bool) -> dict:
             exit_code = proc.returncode
         except subprocess.TimeoutExpired:
             exit_code = -9
+        except FileNotFoundError as exc:
+            print(f"[executor] ❌ 找不到 metagpt CLI: {exc}", file=sys.stderr)
+            exit_code = -127
     duration = round(time.time() - start, 1)
 
     project_dir = None
