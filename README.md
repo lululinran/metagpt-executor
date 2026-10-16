@@ -83,7 +83,7 @@ pip install "click<8.2"
 | 只读挂载 | 代码目录以 `mode=ro` 挂到 `/app`，测试改不了被测代码 |
 | 禁网 | 容器级 `network_disabled=True`；pytest 由宿主预下载的 wheel 离线安装 |
 | 120s 超时 | `container.wait(timeout=120)`，超时 `kill`，报告标记 `timed_out` |
-| 失败捕获 | 解析 pytest `-q` 的 FAILURES 区段，输出 test 名 / 报错类型 / traceback，脚本不崩 |
+| 失败捕获 | 解析 pytest `-q` 的 FAILURES/ERRORS 区段（含收集期错误）；`failed>0` 却解析不出失败块时兜底回传原文，不漏报不崩溃 |
 
 ## 路线图
 
